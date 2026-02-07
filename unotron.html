@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Unotron Wartung - Bosch V1.1</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    
+    <style>
+        :root { 
+            --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-light-blue: #00b5e2; 
+            --bosch-green: #008a4f; --bosch-gray: #eff1f2;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Navigation Drawer */
+        .nav-drawer { position: fixed; left: -280px; top: 0; width: 280px; height: 100%; background: white; box-shadow: 2px 0 15px rgba(0,0,0,0.3); transition: 0.3s ease-in-out; z-index: 3000; padding-top: 20px; }
+        .nav-drawer.open { left: 0; }
+        .nav-item { padding: 15px 25px; display: flex; align-items: center; color: #404040; text-decoration: none; font-weight: 600; border-bottom: 1px solid #f0f0f0; transition: 0.2s; cursor: pointer; }
+        .nav-item:hover { background: #f8f9fa; color: var(--bosch-blue); }
+        .nav-item.active { border-left: 5px solid var(--bosch-red); background: #fdfdfd; color: var(--bosch-red); }
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2500; backdrop-filter: blur(2px); }
+
+        .top-bar { height: 45px; width: 100%; background: linear-gradient(90deg, #d50000 0%, #d50000 25%, #003a6c 25%, #003a6c 50%, #00b5e2 50%, #00b5e2 75%, #008a4f 75%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; box-sizing: border-box; color: white; }
+        .menu-btn { cursor: pointer; font-size: 24px; margin-right: 15px; }
+        
+        .header { background: white; padding: 12px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .bosch-text { color: #d50000; font-size: 30px; font-weight: 900; letter-spacing: -1.5px; font-family: 'Arial Black', sans-serif; }
+        
+        .main-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
+        .content { flex: 3; background: white; padding: 20px; border-top: 4px solid var(--bosch-blue); position: relative; }
+        .sidebar { flex: 1.5; background: white; border-top: 4px solid var(--bosch-light-blue); overflow-y: auto; padding: 10px; }
+
+        .control-row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; border-left: 8px solid #ccc; margin-bottom: 5px; gap: 8px; }
+        .nav-btn { padding: 6px 12px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; font-size: 12px; }
+        .btn-wp { background: var(--bosch-red); color: white; border: none; }
+        
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 4000; }
+        .modal-box { background: white; padding: 30px; border-top: 8px solid var(--bosch-red); width: 450px; text-align: center; }
+        input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+    <div id="drawerOverlay" class="overlay" onclick="toggleMenu()"></div>
+    <div id="navDrawer" class="nav-drawer">
+        <div style="padding: 20px; border-bottom: 2px solid #eee;"><b>MENÜ</b></div>
+        <a href="https://norman8410.github.io/Bosch-Wartung-Agie/" class="nav-item">⚡ Agie Wartung</a>
+        <a href="https://norman8410.github.io/Bosch-Wartung-HE/" class="nav-item">⚙️ HE Wartung</a>
+        <a href="#" class="nav-item active">🟦 Unotron Wartung</a>
+    </div>
+
+    <div class="top-bar">
+        <span class="menu-btn" onclick="toggleMenu()">☰</span>
+        <div style="font-size: 19px; font-weight: 600;">Wartungsintervall Unotron</div>
+    </div>
+
+    <div class="header">
+        <div class="bosch-text">BOSCH <span style="color:#525f6b; font-size:14px;">UNOTRON V1.1</span></div>
+        <div>
+            <span id="timerDisplay" style="color:var(--bosch-red); font-weight:bold; margin-right:15px;"></span>
+            <button id="authBtn" class="nav-btn" onclick="openModal('authModal')">🔑 Login</button>
+        </div>
+    </div>
+
+    <div class="main-layout">
+        <div class="content"><canvas id="mainChart"></canvas></div>
+        <div class="sidebar" id="machineList"></div>
+    </div>
+
+    <div id="authModal" class="modal"><div class="modal-box"><h2>Anmeldung</h2><input type="email" id="email" placeholder="E-Mail"><input type="password" id="pass" placeholder="Passwort"><button class="nav-btn" onclick="login()">Login</button><button class="nav-btn" onclick="closeModal('authModal')">X</button></div></div>
+
+    <script>
+        // Firebase Konfiguration (Nutzt denselben Account)
+        const firebaseConfig = {
+            apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg",
+            authDomain: "bosch-agie-wartung.firebaseapp.com",
+            databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "bosch-agie-wartung"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database(), auth = firebase.auth();
+
+        let state = { cloudRawData: [], extraCycles: {}, offsets: {} };
+        let chart = null;
+
+        // Intervalle laut Vorgabe
+        const INTERVALS = {
+            P1: 8000, P2: 16000, P3: 26000, P5: 104000, P6: 52000, P7: 104000
+        };
+
+        function toggleMenu() {
+            document.getElementById('navDrawer').classList.toggle('open');
+            document.getElementById('drawerOverlay').style.display = 
+                document.getElementById('navDrawer').classList.contains('open') ? 'block' : 'none';
+        }
+
+        db.ref('maintenanceStateUnotron').on('value', snap => {
+            const val = snap.val() || {};
+            state.cloudRawData = val.cloudRawData || [];
+            state.extraCycles = val.extraCycles || {};
+            state.offsets = val.offsets || {};
+            updateUI();
+        });
+
+        function updateUI() {
+            const data = state.cloudRawData.map(item => {
+                const id = item.STATIONNO;
+                const ist = (parseInt(item['COUNT(*)']) || 0) - (state.offsets[id] || 0);
+                const cycles = state.extraCycles[id] || 0;
+                
+                // Unotron Logik: P1 alle 8000
+                let rest = (8000 + (cycles * 8000)) - ist;
+                if (rest > 8000) rest = 8000;
+
+                // Paketbestimmung basierend auf aktuellem Stand
+                let pkg = "P1";
+                const totalIst = ist;
+                if (totalIst >= 520000) pkg = "P7";
+                else if (totalIst >= 104000) pkg = "P5";
+                else if (totalIst >= 52000) pkg = "P6";
+                else if (totalIst >= 26000) pkg = "P3";
+                else if (totalIst >= 16000) pkg = "P2";
+
+                let color = rest < 500 ? "#ff4d4d" : (rest < 1500 ? "#ffa500" : "#008a4f");
+                if (rest <= 0) color = "#8b0000";
+
+                return { id, rest, color, ist, cycles, pkg };
+            }).sort((a,b) => a.rest - b.rest);
+
+            const list = document.getElementById('machineList');
+            const isLogged = !!auth.currentUser;
+
+            list.innerHTML = data.map(d => `
+                <div class="control-row" style="border-left-color:${d.color}">
+                    <div style="flex:1.5"><b>U${d.id}</b><br><small>${d.pkg}</small></div>
+                    <div style="flex:1; text-align:right; font-weight:bold;">${d.rest.toLocaleString()}</div>
+                    <button class="nav-btn btn-wp" ${isLogged && ist >= 104000 ? '' : 'disabled'} onclick="wpReset('${d.id}')">WP</button>
+                    <button class="nav-btn" ${isLogged ? '' : 'disabled'} onclick="changeCycle('${d.id}', 1)">+</button>
+                </div>
+            `).join('');
+
+            renderChart(data);
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if(chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'bar',
+                plugins: [ChartDataLabels],
+                data: {
+                    labels: data.map(d => "U" + d.id),
+                    datasets: [{ data: data.map(d => d.rest), backgroundColor: data.map(d => d.color) }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(255,255,255,0.95)',
+                            titleColor: '#d50000', bodyColor: '#333', borderColor: '#ccc', borderWidth: 1,
+                            callbacks: {
+                                label: (ctx) => {
+                                    const d = data[ctx.dataIndex];
+                                    return ["Rest: " + d.rest.toLocaleString(), "Zähler: " + d.ist.toLocaleString(), "Paket: " + d.pkg];
+                                }
+                            }
+                        },
+                        datalabels: { anchor: 'end', align: 'top', rotation: -90, color: '#003a6c', font: { weight: 'bold' } }
+                    }
+                }
+            });
+        }
+
+        async function changeCycle(id, val) {
+            const current = state.extraCycles[id] || 0;
+            await db.ref(`maintenanceStateUnotron/extraCycles/${id}`).set(current + val);
+        }
+
+        async function wpReset(id) {
+            if(confirm("Full WP Reset für Maschine U" + id + "?")) {
+                const updates = {};
+                updates[`maintenanceStateUnotron/offsets/${id}`] = (state.offsets[id] || 0) + 104000;
+                updates[`maintenanceStateUnotron/extraCycles/${id}`] = 0;
+                await db.ref().update(updates);
+            }
+        }
+
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        async function login() {
+            try { await auth.signInWithEmailAndPassword(document.getElementById('email').value, document.getElementById('pass').value); closeModal('authModal'); }
+            catch(e) { alert(e.message); }
+        }
+        auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? "Logout" : "🔑 Login"; updateUI(); });
+    </script>
+</body>
+</html>
