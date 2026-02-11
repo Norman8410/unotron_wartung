@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Agie Wartung - Master System</title>
+    <title>Agie Wartung - Firebase Config</title>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
@@ -29,7 +29,7 @@
 </head>
 <body onmousemove="resetTimer()">
 
-<div class="top-bar">Agie Wartungsübersicht (Dynamisch)</div>
+<div class="top-bar">Agie Wartungsübersicht (Live Config)</div>
 <div class="header">
     <div><span style="font-size: 24px; color: var(--bosch-red); font-weight: 900;">BOSCH</span></div>
     <button style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue);" onclick="window.close()">❌ Schließen</button>
@@ -37,24 +37,10 @@
 
 <div class="main-layout">
     <div class="chart-area"><canvas id="mainChart"></canvas></div>
-    <div class="sidebar" id="machineList">Lade Daten...</div>
+    <div class="sidebar" id="machineList">Lade Konfiguration...</div>
 </div>
 
 <script>
-    // --- 1. ZEIT-TABELLE (Werte aus deiner CSV) ---
-    const TIMES = { "P1": 60, "P2": 75, "P3": 10, "P4": 220, "P5": 200, "P6": 40, "P7": 345 };
-    
-    // --- 2. WARTUNGSINTERVALLE (16.000er Schritte) ---
-    const AGIE_STEPS = [
-        {target: 16000, pkg: "P1/2"}, {target: 32000, pkg: "P1/3"}, {target: 48000, pkg: "P1/2"},
-        {target: 64000, pkg: "P1/4"}, {target: 80000, pkg: "P1/2/3"}, {target: 96000, pkg: "P1/5"},
-        {target: 112000, pkg: "P1/2"}, {target: 128000, pkg: "P1/3"}, {target: 144000, pkg: "P1/2"},
-        {target: 160000, pkg: "P1/4"}, {target: 176000, pkg: "P1/2/3"}, {target: 192000, pkg: "P1/6/7"},
-        {target: 208000, pkg: "P1/2"}
-    ];
-    const MAX_LIMIT = 220000;
-
-    // --- 3. FIREBASE SETUP ---
     const firebaseConfig = { 
         apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", 
         authDomain: "bosch-agie-wartung.firebaseapp.com", 
@@ -65,70 +51,84 @@
     const db = firebase.database(), auth = firebase.auth();
     
     let chart = null, currentUser = null, inactivityTimer;
+    let config = null; // Hier landet die Config aus Firebase
 
     function resetTimer() {
         clearTimeout(inactivityTimer);
         inactivityTimer = setTimeout(() => { window.close(); }, 70000);
     }
 
-    // Hilfsfunktion zur Zeitberechnung (P1/2 -> 60+75=135)
-    function getDuration(pkgString) {
-        if (!pkgString || pkgString.includes("RESET")) return 0;
+    // Zeitberechnung mit dynamischer Tabelle
+    function getDuration(pkgString, timeTable) {
+        if (!pkgString || pkgString.includes("AUSTAUSCH") || !timeTable) return 0;
         const parts = pkgString.split('/');
         let total = 0;
         parts.forEach((p, idx) => {
-            const key = idx === 0 ? p : "P" + p;
-            total += (TIMES[key] || 0);
+            // Erkennt "P1", "2" (wird P2), "p3" (wird P3)
+            let key = p.toUpperCase();
+            if(!key.startsWith("P")) key = "P" + key;
+            total += (timeTable[key] || 0);
         });
         return total;
     }
 
     auth.onAuthStateChanged(user => { currentUser = user; });
 
-    // --- 4. DATENVERARBEITUNG ---
-    db.ref('maintenanceState').on('value', snap => {
-        const val = snap.val() || {};
-        const raw = val.cloudRawData || [];
-        const offsets = val.agieOffsets || {};
-        const cycles = val.extraCycles || {};
+    // 1. Konfiguration laden
+    db.ref('maintenanceConfig/agie').on('value', cfgSnap => {
+        config = cfgSnap.val();
+        if(!config) return document.getElementById('machineList').innerHTML = "Fehler: Keine Config gefunden.";
         
-        const data = raw.map(item => {
-            const id = item.StationNo || item.STATIONNO;
-            if(!id) return null;
-            
-            const tot = parseInt(item.Parts) || 0;
-            const off = offsets[id] || 0;
-            const ist = tot - off; // Die tatsächlich gelaufenen Teile seit letztem Austausch
-            const cyc = cycles[id] || 0; // Der aktuelle Klick-Stand
-            
-            const step = AGIE_STEPS[cyc] || { target: MAX_LIMIT, pkg: "AUSTAUSCH" };
-            const isOverMax = ist >= MAX_LIMIT;
-            
-            const duration = getDuration(step.pkg);
-            const targetVal = isOverMax ? MAX_LIMIT : step.target;
-            const rest = targetVal - ist;
-
-            return { 
-                id, rest, ist, tot, cyc, 
-                pkgLabel: isOverMax ? "AUSTAUSCH ERFORDERLICH" : "Offen: " + step.pkg,
-                duration, 
-                needsReset: isOverMax, 
-                color: getC(rest, isOverMax) 
-            };
-        }).filter(d => d !== null).sort((a,b) => a.rest - b.rest);
-
-        renderList(data);
-        renderChart(data);
+        // 2. Maschinendaten laden (erst wenn Config da ist)
+        loadMachineData();
     });
+
+    function loadMachineData() {
+        db.ref('maintenanceState').on('value', snap => {
+            if(!config) return;
+            const val = snap.val() || {};
+            const raw = val.cloudRawData || [];
+            const offsets = val.agieOffsets || {};
+            const cycles = val.extraCycles || {};
+            
+            const data = raw.map(item => {
+                const id = item.StationNo || item.STATIONNO;
+                if(!id) return null;
+                
+                const tot = parseInt(item.Parts) || 0;
+                const off = offsets[id] || 0;
+                const ist = tot - off;
+                const cyc = cycles[id] || 0;
+                
+                // Dynamische Steps aus Config nutzen
+                const step = config.steps[cyc] || { target: config.maxLimit, pkg: "AUSTAUSCH" };
+                const isOverMax = ist >= config.maxLimit;
+                
+                const duration = getDuration(step.pkg, config.times);
+                const targetVal = isOverMax ? config.maxLimit : step.target;
+                const rest = targetVal - ist;
+
+                return { 
+                    id, rest, ist, tot, cyc, 
+                    pkgLabel: isOverMax ? "WP RESET / AUSTAUSCH" : "Offen: " + step.pkg,
+                    duration, 
+                    needsReset: isOverMax, 
+                    color: getC(rest, isOverMax) 
+                };
+            }).filter(d => d !== null).sort((a,b) => a.rest - b.rest);
+
+            renderList(data);
+            renderChart(data);
+        });
+    }
 
     function getC(r, reset) {
         if(reset || r <= 0) return "#8b0000";
-        if(r <= 500) return "#d50000";
-        if(r <= 2000) return "#ffa500";
+        if(r <= config.crit) return "#d50000";
+        if(r <= config.warn) return "#ffa500";
         return "#008a4f";
     }
 
-    // --- 5. UI RENDERING ---
     function renderList(data) {
         document.getElementById('machineList').innerHTML = data.map(d => `
             <div class="row ${d.rest <= 0 ? 'blink' : ''}" style="border-left-color:${d.color}">
@@ -148,30 +148,22 @@
             </div>`).join('');
     }
 
-    // --- 6. AKTIONEN ---
     async function changeC(id, v) {
         if(!currentUser) return;
         const ref = db.ref(`maintenanceState/extraCycles/${id}`);
         const snap = await ref.once('value');
         const newVal = (snap.val() || 0) + v;
-        
-        // Logik: Bei Klick wird die Maschine aus der Dashboard-Zuweisung entfernt
         await db.ref(`dashboardAssignments/A${id}`).set("");
         await ref.set(newVal);
-        
-        // CSV Log (simuliert)
-        console.log(`Log: A-${id} Paket bestätigt durch ${currentUser.email}`);
     }
 
     async function autoReset(id, tot) {
-        const check = confirm(`Wurde der Austausch für A-${id} durchgeführt? Der Zähler wird auf 0 gesetzt.`);
-        if(!check) return;
+        if(!confirm(`Austausch für A-${id} bestätigen?`)) return;
         await db.ref(`maintenanceState/agieOffsets/${id}`).set(tot);
         await db.ref(`maintenanceState/extraCycles/${id}`).set(0);
         await db.ref(`dashboardAssignments/A${id}`).set("");
     }
 
-    // --- 7. DIAGRAMM ---
     function renderChart(data) {
         const ctx = document.getElementById('mainChart').getContext('2d');
         if(chart) chart.destroy();
@@ -191,17 +183,15 @@
                                 const d = data[ctx.dataIndex];
                                 return [
                                     `Rest: ${d.rest.toLocaleString()} Stk.`,
-                                    `Aktuelles Paket: ${d.pkgLabel}`,
+                                    `Aktuell: ${d.pkgLabel}`,
                                     `Dauer: ${d.duration} Min.`,
-                                    `Gesamtstand: ${d.tot.toLocaleString()}`,
-                                    `Seit Austausch: ${d.ist.toLocaleString()}`
+                                    `Gesamt: ${d.tot.toLocaleString()}`
                                 ];
                             }
                         }
                     },
-                    datalabels: { anchor: 'end', align: 'top', rotation: -90, font: { weight: 'bold' }, formatter: Math.round }
-                },
-                scales: { y: { beginAtZero: false } }
+                    datalabels: { anchor: 'end', align: 'top', rotation: -90, font: { weight: 'bold' } }
+                }
             },
             plugins: [ChartDataLabels]
         });
