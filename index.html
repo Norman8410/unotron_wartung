@@ -15,9 +15,14 @@
         
         .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
         .header { background: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
         .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; flex: 1; overflow: hidden; }
         .column { background: white; border-top: 5px solid var(--bosch-blue); display: flex; flex-direction: column; overflow: hidden; border-radius: 4px; }
+        
+        /* --- Optimierte Header Links --- */
         .col-header { padding: 15px; background: #f8f9fa; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1.1em; display: flex; justify-content: space-between; align-items: center; }
+        .col-header a { text-decoration: none; color: var(--bosch-blue); transition: color 0.2s; display: flex; align-items: center; gap: 5px; }
+        .col-header a:hover { color: var(--bosch-red); text-decoration: underline; }
         
         .time-badge { font-size: 0.8em; color: var(--bosch-red); background: white; padding: 2px 8px; border-radius: 12px; border: 1px solid #ffcccc; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .machine-list { flex: 1; overflow-y: auto; padding: 10px; }
@@ -29,9 +34,11 @@
         .card.warning { background-color: #fff3cd; border-left: 8px solid #ffc107; color: #856404; }
         .card.critical { background-color: #f8d7da; border-left: 8px solid #dc3545; color: #721c24; }
         .card.overdue { background-color: #f5b7b1; border-left: 8px solid #b03a2e; color: #641e16; }
+        
+        /* In Progress (Blau) gewinnt immer durch !important */
         .card.in-progress { background-color: #d1ecf1 !important; border-left: 8px dashed #0c5460 !important; color: #0c5460; }
         
-        @keyframes blink-red { 0% { background-color: #f5b7b1; } 50% { background-color: #f1948a; } 100% { background-color: #f5b7b1; } }
+        @keyframes blink-red { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
         .blink { animation: blink-red 1s infinite; }
 
         .card-info { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
@@ -68,8 +75,8 @@
 <div class="dashboard-grid">
     <div class="column">
         <div class="col-header">
-            <a href="https://norman8410.github.io/Wartungs-Dashboard-W430V3/agie.html" target="_blank" style="text-decoration:none; color:inherit;">
-                ⚡ Agie <span style="font-size: 0.8em; vertical-align: middle;">➔</span>
+            <a href="https://norman8410.github.io/Wartungs-Dashboard-W430V3/agie.html" target="_blank">
+                ⚡ Agie <span>➔</span>
             </a>
             <div id="count-agie">0</div>
         </div>
@@ -78,8 +85,8 @@
 
     <div class="column" style="border-top-color: var(--bosch-green);">
         <div class="col-header">
-            <a href="https://norman8410.github.io/unotron-wartung/" target="_blank" style="text-decoration:none; color:inherit;">
-                🧪 Unotron <span style="font-size: 0.8em; vertical-align: middle;">➔</span>
+            <a href="https://norman8410.github.io/unotron-wartung/" target="_blank">
+                🧪 Unotron <span>➔</span>
             </a>
             <div id="count-uno">0</div>
         </div>
@@ -88,8 +95,8 @@
 
     <div class="column" style="border-top-color: #007bc0;">
         <div class="col-header">
-            <a href="https://norman8410.github.io/HE-Wartung/" target="_blank" style="text-decoration:none; color:inherit;">
-                ⚙️ HE <span style="font-size: 0.8em; vertical-align: middle;">➔</span>
+            <a href="https://norman8410.github.io/HE-Wartung/" target="_blank">
+                ⚙️ HE <span>➔</span>
             </a>
             <div id="count-he">0</div>
         </div>
@@ -210,6 +217,7 @@
             const ass = state.assignments[m.key] || "";
             const isW = ass !== "";
             let cls = 'warning';
+            // Prio-Logik:
             if(m.rest <= 0) cls = isW ? 'overdue' : 'blink overdue';
             else if(m.rest < m.crit) cls = 'critical';
             
