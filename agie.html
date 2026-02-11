@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Agie Wartung - Firebase Config</title>
+    <title>Agie Wartung - Detailansicht</title>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
@@ -19,17 +19,25 @@
         .main-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
         .chart-area { flex: 3; background: white; padding: 20px; border-top: 4px solid var(--bosch-blue); border-radius: 4px; position: relative; }
         .sidebar { flex: 1.5; background: white; border-top: 4px solid var(--bosch-blue); overflow-y: auto; padding: 10px; border-radius: 4px; }
+        
         .row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; gap: 10px; border-left: 8px solid #ccc; margin-bottom: 5px; transition: 0.2s; }
         .row:hover { background: #f9f9f9; }
-        .btn-cycle { padding: 8px 12px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; }
+        
+        /* Buttons Styling */
+        .btn-cycle { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; transition: 0.2s; }
+        .btn-cycle:hover:not(:disabled) { background: var(--bosch-blue); color: white; }
+        /* Deaktivierter Button Style */
+        .btn-cycle:disabled { opacity: 0.3; cursor: not-allowed; background: #eee; color: #999; border-color: #ddd; }
+        
         .btn-reset-auto { background: var(--bosch-red); color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; width: 100%; border-radius: 2px; }
+        
         @keyframes blink-red { 0% { background: #fff; } 50% { background: #ffcccc; } 100% { background: #fff; } }
         .blink { animation: blink-red 1s infinite; }
     </style>
 </head>
 <body onmousemove="resetTimer()">
 
-<div class="top-bar">Agie Wartungsübersicht (Live Config)</div>
+<div class="top-bar">Agie Wartungsübersicht</div>
 <div class="header">
     <div><span style="font-size: 24px; color: var(--bosch-red); font-weight: 900;">BOSCH</span></div>
     <button style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue);" onclick="window.close()">❌ Schließen</button>
@@ -37,7 +45,7 @@
 
 <div class="main-layout">
     <div class="chart-area"><canvas id="mainChart"></canvas></div>
-    <div class="sidebar" id="machineList">Lade Konfiguration...</div>
+    <div class="sidebar" id="machineList">Lade Daten...</div>
 </div>
 
 <script>
@@ -51,38 +59,32 @@
     const db = firebase.database(), auth = firebase.auth();
     
     let chart = null, currentUser = null, inactivityTimer;
-    let config = null; // Hier landet die Config aus Firebase
+    let config = null; 
 
     function resetTimer() {
         clearTimeout(inactivityTimer);
         inactivityTimer = setTimeout(() => { window.close(); }, 70000);
     }
 
-    // Zeitberechnung mit dynamischer Tabelle
+    // Dauer berechnen
     function getDuration(pkgString, timeTable) {
         if (!pkgString || pkgString.includes("AUSTAUSCH") || !timeTable) return 0;
-        const parts = pkgString.split('/');
-        let total = 0;
-        parts.forEach((p, idx) => {
-            // Erkennt "P1", "2" (wird P2), "p3" (wird P3)
-            let key = p.toUpperCase();
-            if(!key.startsWith("P")) key = "P" + key;
-            total += (timeTable[key] || 0);
-        });
-        return total;
+        return pkgString.split('/').reduce((acc, p) => {
+            let key = p.toUpperCase().trim(); if(!key.startsWith("P")) key = "P"+key;
+            return acc + (timeTable[key] || 0);
+        }, 0);
     }
 
     auth.onAuthStateChanged(user => { currentUser = user; });
 
-    // 1. Konfiguration laden
+    // 1. Config laden
     db.ref('maintenanceConfig/agie').on('value', cfgSnap => {
         config = cfgSnap.val();
         if(!config) return document.getElementById('machineList').innerHTML = "Fehler: Keine Config gefunden.";
-        
-        // 2. Maschinendaten laden (erst wenn Config da ist)
         loadMachineData();
     });
 
+    // 2. Daten laden und verarbeiten
     function loadMachineData() {
         db.ref('maintenanceState').on('value', snap => {
             if(!config) return;
@@ -95,23 +97,30 @@
                 const id = item.StationNo || item.STATIONNO;
                 if(!id) return null;
                 
-                const tot = parseInt(item.Parts) || 0;
-                const off = offsets[id] || 0;
-                const ist = tot - off;
-                const cyc = cycles[id] || 0;
+                const tot = parseInt(item.Parts) || 0;     // Gesamtstückzahl
+                const off = offsets[id] || 0;              // Offset (Stückzahl beim letzten Reset)
+                const ist = tot - off;                     // Stückzahl seit letztem Wechsel
+                const cyc = cycles[id] || 0;               // Aktueller Zyklus-Zähler
                 
-                // Dynamische Steps aus Config nutzen
+                // Welches Paket ist dran?
                 const step = config.steps[cyc] || { target: config.maxLimit, pkg: "AUSTAUSCH" };
                 const isOverMax = ist >= config.maxLimit;
                 
-                const duration = getDuration(step.pkg, config.times);
                 const targetVal = isOverMax ? config.maxLimit : step.target;
                 const rest = targetVal - ist;
+                const pkgName = isOverMax ? "WP RESET / AUSTAUSCH" : step.pkg;
+                
+                // Dauer berechnen
+                const duration = getDuration(step.pkg, config.times);
 
                 return { 
-                    id, rest, ist, tot, cyc, 
-                    pkgLabel: isOverMax ? "WP RESET / AUSTAUSCH" : "Offen: " + step.pkg,
-                    duration, 
+                    id, 
+                    rest,       // Rest bis zur nächsten Wartung
+                    ist,        // Stückzahl seit letztem Reset (1.6)
+                    tot,        // Gesamtstückzahl (1.5)
+                    cyc,        // Zähler (2.2)
+                    pkg: pkgName, // Paketname (1.3)
+                    duration,   // Dauer (1.4)
                     needsReset: isOverMax, 
                     color: getC(rest, isOverMax) 
                 };
@@ -123,29 +132,36 @@
     }
 
     function getC(r, reset) {
-        if(reset || r <= 0) return "#8b0000";
-        if(r <= config.crit) return "#d50000";
-        if(r <= config.warn) return "#ffa500";
-        return "#008a4f";
+        if(reset || r <= 0) return "#8b0000"; // Überfällig (Dunkelrot)
+        if(r <= config.crit) return "#d50000"; // Kritisch (Rot)
+        if(r <= config.warn) return "#ffa500"; // Warnung (Gelb)
+        return "#008a4f"; // OK (Grün)
     }
 
     function renderList(data) {
-        document.getElementById('machineList').innerHTML = data.map(d => `
+        document.getElementById('machineList').innerHTML = data.map(d => {
+            // Button deaktivieren, wenn Rest > 0 (3.1)
+            // Ausnahme: Wenn "Austausch" ansteht, ist der Reset-Button immer aktiv.
+            const isButtonDisabled = d.rest > 0;
+            
+            return `
             <div class="row ${d.rest <= 0 ? 'blink' : ''}" style="border-left-color:${d.color}">
                 <div style="flex:2">
-                    <b>A-${d.id}</b><br>
+                    <b>A-${d.id}</b> <span style="font-size:0.8em; color:#666;">(Zyk: ${d.cyc})</span><br>
                     <small style="color:var(--bosch-red); font-weight:bold">
-                        ${d.pkgLabel} ${d.duration > 0 ? '(' + d.duration + ' Min.)' : ''}
+                        ${d.pkg} ${d.duration > 0 ? '(' + d.duration + ' Min.)' : ''}
                     </small>
                 </div>
                 <div style="flex:1; text-align:right; font-size: 14px;">Rest:<br><b>${d.rest.toLocaleString()}</b></div>
                 <div style="display:${currentUser ? 'flex' : 'none'}; gap:5px; margin-left:10px;">
                     ${d.needsReset ? 
                         `<button class="btn-reset-auto" onclick="autoReset('${d.id}', ${d.tot})">AUSTAUSCH</button>` :
-                        `<button class="btn-cycle" onclick="changeC('${d.id}', 1)">+</button>`
+                        // 3.1: Disabled Attribut hinzugefügt
+                        `<button class="btn-cycle" ${isButtonDisabled ? 'disabled title="Erst bei Fälligkeit aktiv"' : ''} onclick="changeC('${d.id}', 1)">+</button>`
                     }
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 
     async function changeC(id, v) {
@@ -167,11 +183,15 @@
     function renderChart(data) {
         const ctx = document.getElementById('mainChart').getContext('2d');
         if(chart) chart.destroy();
+        
         chart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => "A-" + d.id),
-                datasets: [{ data: data.map(d => d.rest), backgroundColor: data.map(d => d.color) }]
+                datasets: [{ 
+                    data: data.map(d => d.rest), 
+                    backgroundColor: data.map(d => d.color) 
+                }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
@@ -179,18 +199,47 @@
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
+                            // 1. Tooltip ausführlich und logisch angepasst
                             label: function(ctx) {
-                                const d = data[ctx.dataIndex];
-                                return [
-                                    `Rest: ${d.rest.toLocaleString()} Stk.`,
-                                    `Aktuell: ${d.pkgLabel}`,
-                                    `Dauer: ${d.duration} Min.`,
-                                    `Gesamt: ${d.tot.toLocaleString()}`
-                                ];
+                                const d = data[ctx.dataIndex]; // Zugriff auf das Daten-Objekt
+                                let lines = [];
+
+                                // 1.1 / 1.2: Reststückzahl oder Überfällig-Text
+                                if (d.rest <= 0) {
+                                    lines.push(`⚠️ Fällig seit: ${Math.abs(d.rest).toLocaleString()} Stk.`);
+                                    // (Datum kann hier nicht angezeigt werden, da nicht in DB gespeichert)
+                                } else {
+                                    lines.push(`Rest bis Wartung: ${d.rest.toLocaleString()} Stk.`);
+                                }
+
+                                // 1.3: Paketname
+                                lines.push(`Paket offen: ${d.pkg}`);
+
+                                // 1.4: Dauer
+                                if(d.duration > 0) {
+                                    lines.push(`Dauer: ca. ${d.duration} Min.`);
+                                }
+
+                                // 1.5: Gesamtstückzahl
+                                lines.push(`Gesamtstückzahl: ${d.tot.toLocaleString()}`);
+
+                                // 1.6: Seit letztem WP Wechsel
+                                lines.push(`Seit letztem WP-Wechsel: ${d.ist.toLocaleString()}`);
+
+                                return lines;
                             }
                         }
                     },
-                    datalabels: { anchor: 'end', align: 'top', rotation: -90, font: { weight: 'bold' } }
+                    datalabels: { 
+                        anchor: 'end', 
+                        align: 'top', 
+                        rotation: -90, 
+                        font: { weight: 'bold' },
+                        formatter: (val) => val.toLocaleString() 
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true } // Y-Achse startet immer bei 0
                 }
             },
             plugins: [ChartDataLabels]
