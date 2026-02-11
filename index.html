@@ -12,32 +12,38 @@
             --bosch-gray: #eff1f2; --bosch-dark-red: #8b0000; --bosch-work-yellow: #fff3cd; 
         }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Navigation & Layout */
         .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
         .header { background: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 20px; flex: 1; overflow: hidden; }
         .column { background: white; border-top: 5px solid var(--bosch-blue); display: flex; flex-direction: column; overflow: hidden; border-radius: 4px; }
         .col-header { padding: 15px; background: #f8f9fa; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1.1em; display: flex; justify-content: space-between; align-items: center; }
-        .col-header a { text-decoration: none; color: inherit; cursor: pointer; }
+        
+        /* Zeit & Karten */
         .time-badge { font-size: 0.8em; color: var(--bosch-red); background: #ffeeee; padding: 2px 8px; border-radius: 12px; border: 1px solid #ffcccc; }
         .machine-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .card { padding: 12px; border-bottom: 1px solid #eee; border-left: 8px solid #ccc; margin-bottom: 8px; background: #fff; position: relative; }
+        .card { padding: 12px; border-bottom: 1px solid #eee; border-left: 8px solid #ccc; margin-bottom: 8px; background: #fff; }
         .card.warning { border-left-color: #ffa500; } 
         .card.critical { border-left-color: var(--bosch-red); } 
-        .card.overdue { border-left-color: var(--bosch-dark-red); } 
+        .card.overdue { border-left-color: var(--bosch-dark-red); }
         .card.in-progress { background: var(--bosch-work-yellow) !important; border-left-style: dashed; }
-        @keyframes blink-red { 0% { background: #fff; } 50% { background: #ffcccc; } 100% { background: #fff; } }
-        .blink { animation: blink-red 1s infinite; }
-        .card-info { display: flex; justify-content: space-between; align-items: flex-start; }
-        .m-id { font-weight: bold; font-size: 1.1em; } 
-        .m-rest { font-weight: bold; font-size: 1.1em; } 
-        .m-paket { font-size: 0.85em; color: var(--bosch-red); font-weight: bold; margin-top: 2px; } 
-        .m-time { font-size: 0.75em; color: #666; font-style: italic; margin-top: 4px; }
-        select { width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 2px; margin-top: 8px; }
-        .nav-btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); border-radius: 2px; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 4000; }
-        .modal-box { background: white; padding: 30px; border-top: 8px solid var(--bosch-red); width: 450px; border-radius: 4px; }
+        
+        /* Modale & Formulare */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 5000; }
+        .modal-box { background: white; padding: 25px; width: 350px; border-top: 8px solid var(--bosch-red); border-radius: 4px; }
+        .modal-box h2 { margin-top: 0; color: var(--bosch-blue); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 0.85em; margin-bottom: 5px; }
+        .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; }
+        .nav-btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); }
+        .primary-btn { background: var(--bosch-blue); color: white; border: none; width: 100%; padding: 10px; cursor: pointer; font-weight: bold; }
+        .link-btn { background: none; border: none; color: var(--bosch-blue); text-decoration: underline; cursor: pointer; font-size: 0.85em; margin-top: 10px; display: block; width: 100%; text-align: center; }
+        
         #timeout-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: #ddd; }
         #timeout-bar { height: 100%; width: 0%; background: var(--bosch-red); }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .blink { animation: blink 1s infinite; }
     </style>
 </head>
 <body onmousedown="resetInactivityTimer()" onkeydown="resetInactivityTimer()">
@@ -45,46 +51,30 @@
 <div class="top-bar">Zentrales Wartungs Dashboard W430</div>
 
 <div class="header">
-    <div><span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> <span style="font-weight:bold;margin-left:10px;color:#555;">Statusübersicht</span></div>
+    <div><span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> <span style="font-weight:bold;margin-left:10px;color:#555;">Dashboard</span></div>
     <div style="display:flex; gap:10px;">
-        <button class="nav-btn" onclick="document.getElementById('helpModal').style.display='flex'">ℹ️ Hilfe</button>
-        <button id="authBtn" class="nav-btn" onclick="handleAuth()">🔑 Login</button>
+        <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
         <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
     </div>
 </div>
 
 <div class="dashboard-grid">
-    <div class="column">
-        <div class="col-header">
-            <a onclick="window.open('https://norman8410.github.io/Wartungs-Dashboard-W430V3/agie.html','_blank')">⚡ Agie ➔</a>
-            <div id="count-agie">0</div>
-        </div>
-        <div class="machine-list" id="list-agie"></div>
-    </div>
-    <div class="column" style="border-top-color: var(--bosch-green);">
-        <div class="col-header">
-            <a onclick="window.open('https://norman8410.github.io/unotron-wartung/','_blank')">🧪 Unotron ➔</a>
-            <div id="count-uno">0</div>
-        </div>
-        <div class="machine-list" id="list-uno"></div>
-    </div>
-    <div class="column" style="border-top-color: #007bc0;">
-        <div class="col-header">
-            <a onclick="window.open('https://norman8410.github.io/HE-Wartung/','_blank')">⚙️ HE ➔</a>
-            <div id="count-he">0</div>
-        </div>
-        <div class="machine-list" id="list-he"></div>
-    </div>
+    <div class="column"><div class="col-header"><span>⚡ Agie</span><div id="count-agie">0</div></div><div class="machine-list" id="list-agie"></div></div>
+    <div class="column" style="border-top-color: var(--bosch-green);"><div class="col-header"><span>🧪 Unotron</span><div id="count-uno">0</div></div><div class="machine-list" id="list-uno"></div></div>
+    <div class="column" style="border-top-color: #007bc0;"><div class="col-header"><span>⚙️ HE</span><div id="count-he">0</div></div><div class="machine-list" id="list-he"></div></div>
 </div>
 
 <div id="timeout-bar-container"><div id="timeout-bar"></div></div>
 
-<div id="helpModal" class="modal">
+<div id="authModal" class="modal">
     <div class="modal-box">
-        <h2 style="color:var(--bosch-blue); border-bottom: 2px solid var(--bosch-red); padding-bottom: 10px;">System-Hilfe</h2>
-        <p>Den Einladungscode erhalten Sie von Ihrem TL, FK oder Admin.</p>
-        <p><strong>Verantwortlich: Norman Schultheis</strong></p>
-        <button class="nav-btn" style="width:100%; margin-top:20px; background:var(--bosch-blue); color:white; border:none;" onclick="document.getElementById('helpModal').style.display='none'">Schließen</button>
+        <h2 id="modalTitle">Login</h2>
+        <div class="form-group"><label>E-Mail</label><input type="email" id="authEmail"></div>
+        <div class="form-group"><label>Passwort</label><input type="password" id="authPass"></div>
+        <div class="form-group" id="inviteGroup" style="display:none;"><label>Einladungscode</label><input type="text" id="authInvite"></div>
+        <button class="primary-btn" id="mainAuthBtn" onclick="processAuth()">Anmelden</button>
+        <button class="link-btn" id="switchBtn" onclick="switchAuthMode()">Neu hier? Registrieren</button>
+        <button class="link-btn" style="color:gray; text-decoration:none;" onclick="toggleAuthModal()">Abbrechen</button>
     </div>
 </div>
 
@@ -98,8 +88,42 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database(), auth = firebase.auth();
 
-    let state = { config:{}, assignments:{}, agie:{}, uno:{}, he:{}, maintConfig: {} };
+    let state = { config:{}, assignments:{}, agie:{}, uno:{}, he:{}, maintConfig: {}, isRegMode: false };
     let inactivityTimer;
+
+    // --- AUTH LOGIK ---
+
+    function toggleAuthModal() {
+        if(auth.currentUser) { auth.signOut(); return; }
+        document.getElementById('authModal').style.display = 'flex';
+    }
+
+    function switchAuthMode() {
+        state.isRegMode = !state.isRegMode;
+        document.getElementById('modalTitle').innerText = state.isRegMode ? "Registrieren" : "Login";
+        document.getElementById('mainAuthBtn').innerText = state.isRegMode ? "Account erstellen" : "Anmelden";
+        document.getElementById('switchBtn').innerText = state.isRegMode ? "Schon ein Konto? Login" : "Neu hier? Registrieren";
+        document.getElementById('inviteGroup').style.display = state.isRegMode ? "block" : "none";
+    }
+
+    async function processAuth() {
+        const email = document.getElementById('authEmail').value;
+        const pass = document.getElementById('authPass').value;
+        const invite = document.getElementById('authInvite').value;
+
+        try {
+            if(state.isRegMode) {
+                // Code aus Firebase holen
+                const snap = await db.ref('config/inviteCode').once('value');
+                if(invite !== snap.val()) { alert("Falscher Einladungscode!"); return; }
+                await auth.createUserWithEmailAndPassword(email, pass);
+                alert("Konto erstellt!");
+            } else {
+                await auth.signInWithEmailAndPassword(email, pass);
+            }
+            document.getElementById('authModal').style.display = 'none';
+        } catch (e) { alert("Fehler: " + e.message); }
+    }
 
     // --- HILFSFUNKTIONEN ---
 
@@ -126,34 +150,11 @@
     function resetInactivityTimer() {
         clearTimeout(inactivityTimer);
         if(auth.currentUser) {
-            inactivityTimer = setTimeout(() => auth.signOut(), 70000);
+            inactivityTimer = setTimeout(() => auth.signOut(), 120000); // Erhöht auf 2 Min
         }
     }
 
-    // --- AUTH LOGIK (NEU) ---
-
-    async function handleAuth() {
-        if(auth.currentUser) {
-            auth.signOut();
-        } else {
-            const userInput = prompt("Bitte Einladungscode eingeben:");
-            if(!userInput) return;
-
-            // Code aus Firebase prüfen
-            const snap = await db.ref('config/inviteCode').once('value');
-            const correctCode = snap.val();
-
-            if(userInput === correctCode) {
-                auth.signInAnonymously()
-                    .then(() => alert("Erfolgreich angemeldet!"))
-                    .catch(e => alert("Fehler: " + e.message));
-            } else {
-                alert("Falscher Einladungscode!");
-            }
-        }
-    }
-
-    // --- LISTENERS ---
+    // --- DATA HANDLING ---
 
     db.ref('maintenanceConfig').on('value', s => { state.maintConfig = s.val() || {}; updateUI(); });
     db.ref('maintenanceState').on('value', s => { state.agie = s.val() || {}; updateUI(); });
@@ -163,12 +164,9 @@
     db.ref('config').on('value', s => { state.config = s.val() || {}; updateUI(); });
 
     auth.onAuthStateChanged(user => { 
-        document.getElementById('authBtn').innerText = user ? "🔓 Logout" : "🔑 Login";
-        resetInactivityTimer();
+        document.getElementById('authBtn').innerText = user ? "🔓 Logout ("+user.email.split('@')[0]+")" : "🔑 Login";
         updateUI();
     });
-
-    // --- RENDERING ---
 
     function updateUI() {
         if(!state.maintConfig.agie) return; 
@@ -196,7 +194,7 @@
         }).filter(m => m && m.rest < m.warn).sort((a,b) => a.rest - b.rest);
 
         const timeStr = totalMin > 0 ? `<span class="time-badge">⏳ ${formatTotalTime(totalMin)}</span>` : "";
-        document.getElementById(countId).innerHTML = `<span>${data.length}</span> ${timeStr}`;
+        document.getElementById(countId).innerHTML = `<span style="margin-right:8px">${data.length}</span> ${timeStr}`;
 
         document.getElementById(listId).innerHTML = data.map(m => {
             const ass = state.assignments[m.key] || "";
@@ -206,7 +204,7 @@
             <div class="card ${cls} ${isW?'in-progress':''}">
                 <div class="card-info">
                     <div><b>${m.id}</b><br><span class="m-paket">${m.pkg}</span><br><span class="m-time">⏱ ${m.dur} Min.</span></div>
-                    <div class="m-rest">${m.rest.toLocaleString()}</div>
+                    <div style="text-align:right"><b>${m.rest.toLocaleString()}</b></div>
                 </div>
                 <select ${!auth.currentUser?'disabled':''} onchange="db.ref('dashboardAssignments/${m.key}').set(this.value)">
                     <option value="">-- Einsteller --</option>
