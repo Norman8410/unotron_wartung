@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Unotron Wartungsübersicht</title>
+    <title>Unotron Wartung - Detailansicht</title>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
@@ -10,190 +10,217 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <style>
         :root { 
-            --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-light-blue: #00b5e2; 
-            --bosch-green: #008a4f; --bosch-gray: #eff1f2; --bosch-dark-red: #8b0000;
+            --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; 
+            --bosch-gray: #eff1f2; --bosch-dark-red: #8b0000;
         }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
-        .top-bar { 
-            height: 45px; width: 100%; 
-            background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); 
-            display: flex; align-items: center; padding: 0 15px; box-sizing: border-box; color: white; font-weight: bold;
-        }
-        
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
         .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .main-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
         .chart-area { flex: 3; background: white; padding: 20px; border-top: 4px solid var(--bosch-blue); border-radius: 4px; position: relative; }
         .sidebar { flex: 1.5; background: white; border-top: 4px solid var(--bosch-blue); overflow-y: auto; padding: 10px; border-radius: 4px; }
-        .row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; gap: 10px; border-left: 8px solid #ccc; margin-bottom: 5px; }
-        
-        .btn-cycle { padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; }
-        .btn-close { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); border-radius: 2px; }
-        
+        .row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; gap: 10px; border-left: 8px solid #ccc; margin-bottom: 5px; transition: 0.2s; }
+        .row:hover { background: #f9f9f9; }
+        .btn-cycle { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; }
+        .btn-cycle:hover:not(:disabled) { background: var(--bosch-blue); color: white; }
+        .btn-cycle:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-reset-auto { background: var(--bosch-red); color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; width: 100%; border-radius: 2px; }
         @keyframes blink-red { 0% { background: #fff; } 50% { background: #ffcccc; } 100% { background: #fff; } }
         .blink { animation: blink-red 1s infinite; }
     </style>
 </head>
-<body onmousemove="resetTimer()" onkeydown="resetTimer()" onclick="resetTimer()">
+<body onmousemove="resetTimer()">
 
-    <div class="top-bar">Unotron Wartungsübersicht</div>
+<div class="top-bar">Unotron Wartungsübersicht</div>
+<div class="header">
+    <div><span style="font-size: 24px; color: var(--bosch-red); font-weight: 900;">BOSCH</span></div>
+    <button style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue);" onclick="window.close()">❌ Schließen</button>
+</div>
+
+<div class="main-layout">
+    <div class="chart-area"><canvas id="mainChart"></canvas></div>
+    <div class="sidebar" id="machineList">Lade Unotron Daten...</div>
+</div>
+
+<script>
+    const firebaseConfig = { 
+        apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", 
+        authDomain: "bosch-agie-wartung.firebaseapp.com", 
+        databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", 
+        projectId: "bosch-agie-wartung" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(), auth = firebase.auth();
     
-    <div class="header">
-        <div><span style="font-size: 24px; color: var(--bosch-red); font-weight: 900;">BOSCH</span></div>
-        <button class="btn-close" onclick="tryClose()">❌ Schließen</button>
-    </div>
+    let chart = null, currentUser = null, inactivityTimer;
+    let config = null; 
 
-    <div class="main-layout">
-        <div class="chart-area"><canvas id="mainChart"></canvas></div>
-        <div class="sidebar" id="machineList">Lade Daten...</div>
-    </div>
-    
-    <script>
-        const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database(), auth = firebase.auth();
-        
-        let chart = null, currentUser = null;
-        let inactivityTimer;
-        
-        function tryClose() {
-            window.close();
-            setTimeout(() => { if(!window.closed) alert("Bitte Tab manuell schließen."); }, 500);
-        }
+    function resetTimer() {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => { window.close(); }, 70000);
+    }
 
-        function resetTimer() {
-            clearTimeout(inactivityTimer);
-            inactivityTimer = setTimeout(() => { tryClose(); }, 70000);
-        }
-        resetTimer();
-
-        // Unotron Wartungsschritte Definition
-        const UNO_STEPS = [
-            {total:2000, pkg:"P1, P2"}, {total:4000, pkg:"P3"}, {total:10000, pkg:"P1"}, 
-            {total:14000, pkg:"P5"}, {total:18000, pkg:"P1, P2"}, {total:26000, pkg:"P1"}, 
-            {total:28000, pkg:"P6, P7"}, {total:30000, pkg:"P3"}, {total:34000, pkg:"P1, P2"}, 
-            {total:42000, pkg:"P1"}, {total:50000, pkg:"P1, P2"}, {total:56000, pkg:"P3"}, 
-            {total:58000, pkg:"P1"}, {total:66000, pkg:"P1, P2"}, {total:74000, pkg:"P1"}, 
-            {total:82000, pkg:"P1, P2"}, {total:90000, pkg:"P3"}, {total:98000, pkg:"P1"}, 
-            {total:104000, pkg:"WP RESET"}
-        ];
-
-        auth.onAuthStateChanged(user => { currentUser = user; });
-
-        async function writeLog(action, machine, detail, rest, gesamt, paket) {
-            if(!currentUser) return;
-            await db.ref('auditLog').push({
-                Datum: new Date().toLocaleDateString('de-DE'), Uhrzeit: new Date().toLocaleTimeString('de-DE'),
-                Benutzer: currentUser.email, Aktion: action, Maschine: machine, Details: detail,
-                Reststückzahl: rest, Gesamtstückzahl: gesamt, Paket: paket
-            });
-        }
-
-        // Listener für Unotron Daten
-        db.ref('maintenanceStateUnotron').on('value', snap => {
-            const val = snap.val() || {}, raw = val.cloudRawData || [], cycles = val.extraCycles || {};
-            const data = raw.map(item => {
-                const id = item.StationNo || item.STATIONNO;
-                if(!id) return null;
-                const ist = parseInt(item["COUNT(*)"]) || 0;
-                const cyc = cycles[id] || 0;
-                
-                // Zielwert ermitteln (aus Tabelle oder dynamisch nach Stufe 18)
-                const tObj = UNO_STEPS[cyc] || { total: 104000 + ((cyc - 18) * 5000), pkg: "Folgepaket" };
-                const rest = tObj.total - ist;
-                
-                return { id, rest, ist, color: getC(rest), cyc, pkg: "Wartung " + tObj.pkg };
-            }).filter(d => d !== null).sort((a,b) => a.rest - b.rest);
-            renderList(data); renderChart(data);
+    async function writeLog(action, machine, details) {
+        if (!auth.currentUser) return;
+        await db.ref('logs').push({
+            zeit: new Date().toLocaleString('de-DE'),
+            user: auth.currentUser.email,
+            seite: 'unotron.html',
+            aktion: action,
+            maschine: machine,
+            info: details
         });
+    }
 
-        function getC(r) { return r <= 0 ? "#8b0000" : (r <= 60 ? "#d50000" : (r <= 250 ? "#ffa500" : "#008a4f")); }
+    function getDuration(pkgString, timeTable) {
+        if (!pkgString || pkgString.includes("AUSTAUSCH") || !timeTable) return 0;
+        const parts = pkgString.split(/[\/\s,]+/);
+        return parts.reduce((acc, p) => {
+            let key = p.toUpperCase().trim(); 
+            if(key && !key.startsWith("P")) key = "P" + key;
+            return acc + (timeTable[key] || 0);
+        }, 0);
+    }
 
-        function renderList(data) {
-            document.getElementById('machineList').innerHTML = data.map(d => `
-                <div class="row ${d.rest <= 0 ? 'blink' : ''}" style="border-left-color:${d.color}">
-                    <div style="flex:1.5"><b>U-${d.id}</b> <br><small style="color:var(--bosch-red);font-weight:bold">${d.pkg}</small></div>
-                    <div style="flex:1; text-align:right;"><b>${d.rest.toLocaleString()}</b></div>
-                    <div style="display:${currentUser ? 'flex' : 'none'}; gap:5px; margin-left:10px;">
-                        <button class="btn-cycle" onclick="changeC('${d.id}', -1)">-</button>
-                        <span style="font-weight:bold; min-width:20px; text-align:center; display:inline-block">${d.cyc}</span>
-                        <button class="btn-cycle" onclick="changeC('${d.id}', 1)">+</button>
-                    </div>
-                </div>`).join('');
-        }
+    auth.onAuthStateChanged(user => { 
+        currentUser = user; 
+        loadData();
+    });
 
-        async function changeC(id, v) {
-            if(!currentUser) return;
-            const refCyc = db.ref(`maintenanceStateUnotron/extraCycles/${id}`);
-            const refAssign = db.ref(`dashboardAssignments/U${id}`);
-            
-            const snap = await refCyc.once('value');
-            const oldCyc = snap.val() || 0;
-            const newVal = Math.max(0, oldCyc + v);
-            
-            // Namen der Pakete für Log holen
-            const oldPkg = (UNO_STEPS[oldCyc] || {pkg:"Folge"}).pkg;
-            const newPkg = (UNO_STEPS[newVal] || {pkg:"Folge"}).pkg;
+    function loadData() {
+        // Konfiguration laden
+        db.ref('maintenanceConfig/unotron').on('value', cfgSnap => {
+            config = cfgSnap.val();
+            // Status/Daten laden
+            db.ref('maintenanceStateUnotron').on('value', snap => {
+                if(!config) return;
+                const val = snap.val() || {};
+                const raw = val.cloudRawData || [];
+                const offsets = val.unotronOffsets || {}; 
+                const cycles = val.extraCycles || val.clickCounts || {};
+                
+                const data = raw.map(item => {
+                    const id = item.STATIONNO;
+                    if(!id) return null;
+                    
+                    const tot = parseInt(item["COUNT(*)"]) || 0;
+                    const off = offsets[id] || 0;
+                    const ist = tot - off; 
+                    const cyc = parseInt(cycles[id]) || 0; 
+                    
+                    const step = config.steps ? config.steps[cyc] : null;
+                    let pkgName = "AUSTAUSCH";
+                    let targetVal = config.maxLimit;
+                    let isOverCycle = true;
+                    
+                    if (step) {
+                        pkgName = step.pkg;
+                        targetVal = step.target;
+                        isOverCycle = false;
+                    }
+                    
+                    const needsReset = ist >= config.maxLimit || isOverCycle;
+                    const rest = targetVal - ist; 
+                    const duration = getDuration(pkgName, config.times);
 
-            if (v > 0) {
-                // Bei Paketerhöhung: Zuweisung im Dashboard löschen
-                await refAssign.set("");
-                await writeLog("Paket +", `U-${id}`, `Wechsel zu ${newPkg}`, "n.a.", "n.a.", oldPkg);
-            } else {
-                await writeLog("Storno -", `U-${id}`, `Zurück auf ${newPkg}`, "n.a.", "n.a.", oldPkg);
-            }
-            await refCyc.set(newVal);
-        }
+                    return { 
+                        id, rest, ist, tot, cyc, 
+                        pkg: pkgName, 
+                        duration, 
+                        needsReset, 
+                        color: getC(rest, needsReset) 
+                    };
+                }).filter(d => d !== null).sort((a,b) => a.rest - b.rest);
 
-        function renderChart(data) {
-            const ctx = document.getElementById('mainChart').getContext('2d');
-            if(chart) chart.destroy();
-            chart = new Chart(ctx, {
-                type: 'bar', 
-                plugins: [ChartDataLabels],
-                data: { 
-                    labels: data.map(d => "U-" + String(d.id)), 
-                    datasets: [{ 
-                        data: data.map(d => d.rest), 
-                        backgroundColor: data.map(d => d.color) 
-                    }] 
-                },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    plugins: { 
-                        legend: { display: false },
-                        tooltip: {
-                            enabled: true,
-                            backgroundColor: 'rgba(0, 58, 108, 0.9)',
-                            titleFont: { size: 18, weight: 'bold' },
-                            bodyFont: { size: 16, weight: 'bold' },
-                            padding: 15,
-                            displayColors: false,
-                            callbacks: {
-                                label: function(context) {
-                                    const d = data[context.dataIndex];
-                                    const restText = (d.rest || 0).toLocaleString();
-                                    const istText = (d.ist || 0).toLocaleString();
-                                    const pkgText = d.pkg || "Unbekannt";
-                                    return [
-                                        `${restText} Teile bis Wartung ${pkgText}`,
-                                        `${istText} Gesamtstückzahl seit Wartungsplan Wechsel`
-                                    ];
-                                }
-                            }
-                        },
-                        datalabels: { 
-                            anchor: 'end', align: 'top', rotation: -90, 
-                            formatter: v => v.toLocaleString(), 
-                            font: { weight: 'bold' } 
-                        } 
-                    },
-                    scales: { y: { beginAtZero: true } }
-                }
+                renderList(data);
+                renderChart(data);
             });
-        }
+        });
+    }
 
-    </script>
+    function getC(r, reset) {
+        if(reset || r <= 0) return "#8b0000"; 
+        if(r <= (config.crit || 60)) return "#d50000"; 
+        if(r <= (config.warn || 500)) return "#ffa500"; 
+        return "#008a4f"; 
+    }
+
+    function renderList(data) {
+        document.getElementById('machineList').innerHTML = data.map(d => `
+            <div class="row ${d.rest <= 0 ? 'blink' : ''}" style="border-left-color:${d.color}">
+                <div style="flex:2">
+                    <b>Unotron-${d.id}</b> <span style="font-size:0.8em; color:#666;">(Schritt: ${d.cyc + 1})</span><br>
+                    <small style="color:var(--bosch-red); font-weight:bold">${d.pkg} ${d.duration > 0 ? '(' + d.duration + ' Min.)' : ''}</small>
+                </div>
+                <div style="flex:1; text-align:right;">Rest: <b>${d.rest.toLocaleString()}</b></div>
+                <div style="display:${currentUser ? 'flex' : 'none'}; gap:5px;">
+                    ${d.needsReset ? 
+                        `<button class="btn-reset-auto" onclick="autoReset('${d.id}', ${d.tot})">AUSTAUSCH</button>` :
+                        `<button class="btn-cycle" onclick="changeC('${d.id}', 1)" ${d.rest > (config.warn || 500) ? 'disabled' : ''}>+</button>`
+                    }
+                </div>
+            </div>`).join('');
+    }
+
+    async function changeC(id, v) {
+        const ref = db.ref(`maintenanceStateUnotron/extraCycles/${id}`);
+        const snap = await ref.once('value');
+        const next = (parseInt(snap.val()) || 0) + v;
+        await ref.set(next);
+        await writeLog("WARTUNG_OK", `Unotron-${id}`, `Schritt auf ${next + 1}`);
+    }
+
+    async function autoReset(id, tot) {
+        if(!confirm(`Austausch für Unotron-${id} bestätigen?`)) return;
+        await db.ref(`maintenanceStateUnotron/unotronOffsets/${id}`).set(tot);
+        await db.ref(`maintenanceStateUnotron/extraCycles/${id}`).set(0);
+        await writeLog("RESET", `Unotron-${id}`, `Stand: ${tot}`);
+    }
+
+    function renderChart(data) {
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        if(chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => "U-" + d.id),
+                datasets: [{ data: data.map(d => d.rest), backgroundColor: data.map(d => d.color) }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    // --- EXAKTER TOOLTIP AUFBAU AUS AGIE (2).HTML ---
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const d = data[ctx.dataIndex];
+                                let lines = [];
+                                if (d.rest <= 0) {
+                                    lines.push(`⚠️ Fällig seit: ${Math.abs(d.rest).toLocaleString()} Stk.`);
+                                } else {
+                                    lines.push(`Rest bis Wartung: ${d.rest.toLocaleString()} Stk.`);
+                                }
+                                lines.push(`Paket offen: ${d.pkg}`);
+                                if(d.duration > 0) {
+                                    lines.push(`Dauer: ca. ${d.duration} Min.`);
+                                }
+                                lines.push(`Gesamtstückzahl: ${d.tot.toLocaleString()}`);
+                                lines.push(`Seit letztem WP-Wechsel: ${d.ist.toLocaleString()}`);
+                                return lines;
+                            }
+                        }
+                    },
+                    datalabels: { 
+                        anchor: 'end', align: 'top', rotation: -90, font: { weight: 'bold' },
+                        formatter: (val) => val.toLocaleString() 
+                    }
+                },
+                scales: { y: { beginAtZero: false } }
+            },
+            plugins: [ChartDataLabels]
+        });
+    }
+</script>
 </body>
 </html>
