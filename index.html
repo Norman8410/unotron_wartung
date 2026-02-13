@@ -171,7 +171,21 @@
     async function handleEinstellerChange(prefix, sId, val) { if (!auth.currentUser) return; const fullId = prefix + sId; if (!val) { await db.ref(`dashboardAssignments/${fullId}`).set(""); return; } const pw = prompt("Admin-Passwort:"); const snap = await db.ref('config/AdminPW').once('value'); if (pw === snap.val()) { await db.ref(`dashboardAssignments/${fullId}`).set(val); await writeLog("ZUWEISUNG", `${prefix}-${sId}`, `Einsteller: ${val}`); } else { alert("Falsch!"); updateUI(); } }
     async function addEinsteller() { const n = document.getElementById('newNachname').value.trim(), v = document.getElementById('newVorname').value.trim(); if (!n || !v) return; const full = `${n} ${v}`, list = state.config.einstellerListe || []; if (list.includes(full)) return alert("Existiert!"); await db.ref('config/einstellerListe').set([...list, full]); document.getElementById('newNachname').value = ''; document.getElementById('newVorname').value = ''; renderAdminList(); }
     async function confirmMaint(prefix, id, isReset, total) { if (!auth.currentUser) return; const fullId = prefix + id; const assignedUser = state.assignments[fullId]; if (!assignedUser) { return alert("Bitte zuerst einen Einsteller zuweisen."); } let root, offK; if (prefix === 'A') { root = 'maintenanceState'; offK = 'agieOffsets'; } else if (prefix === 'U') { root = 'maintenanceStateUnotron'; offK = 'unotronOffsets'; } else if (prefix === 'H') { root = 'maintenanceStateHE'; offK = 'heOffsets'; } else if (prefix === 'UA') { root = 'maintenanceStateUnotronAuto'; offK = 'unotronOffsets'; } else if (prefix === 'L') { root = 'maintenanceStateLaser'; offK = 'laserOffsets'; } else { return; } if (isReset) { if(!confirm("Reset für " + fullId + " bestätigen?")) return; await db.ref(`${root}/${offK}/${id}`).set(total); await db.ref(`${root}/extraCycles/${id}`).set(0); await writeLog("RESET", `${prefix}-${id}`, `Vollständig auf ${total}`); } else { const ref = db.ref(`${root}/extraCycles/${id}`); const s = await ref.once('value'); await ref.set((s.val()||0)+1); await writeLog("WARTUNG_OK", `${prefix}-${id}`, "Zyklus +1"); } await db.ref(`dashboardAssignments/${fullId}`).set(""); }
-    function formatTotalTime(m) { if(m<=0)return"0m"; if(m<60)return m+"m"; const h=Math.floor(m/60); return h+"h "+(m%60)+"m"; }
+    function formatTotalTime(m) {
+        if (m <= 0) return "0m";
+        const tage = Math.floor(m / 1440);
+        const restMinutenNachTagen = m % 1440;
+        const stunden = Math.floor(restMinutenNachTagen / 60);
+        const minuten = restMinutenNachTagen % 60;
+        
+        let teile = [];
+        if (tage > 0) teile.push(tage + 'd');
+        if (stunden > 0) teile.push(stunden + 'h');
+        if (minuten > 0 || teile.length === 0) teile.push(minuten + 'm');
+        
+        return teile.join(' ');
+    }
+
     function getDuration(p, t) { if(!p||p.includes("RESET")||!t)return 0; return p.split(/[\s\/]+/).reduce((a,c)=>{let k=c.toUpperCase().trim(); if(k && !k.startsWith("P"))k="P"+k; return a+(t[k]||0);},0); }
     function resetInactivityTimer() { clearTimeout(inactivityTimer); if(auth.currentUser) inactivityTimer=setTimeout(()=>auth.signOut(),300000); }
     
