@@ -44,8 +44,8 @@
         <div id="overall-workload" class="total-workload">Lade...</div>
     </div>
     <div style="display:flex; gap:10px;">
-        <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
-        <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
+        <button id="authBtn" class="nav-btn">Login</button>
+        <button class="nav-btn">Einsteller</button>
     </div>
 </div>
 
@@ -60,14 +60,12 @@
     <div class="column" style="border-top-color: #6f42c1;"><div class="col-header"><a href="lager.html" target="_blank">📦 Lager & Regale <span>➔</span></a><div id="count-lager"></div></div><div class="machine-list" id="list-lager"></div></div>
 </div>
 
-<!-- Modals für Auth/Admin hier einfügen -->
-
 <script>
     const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.database(), auth = firebase.auth();
+    const db = firebase.database();
     
-    let state = { config: {}, assignments: {}, maintConfig: {}, maintenanceState: {}, maintenanceStateHE: {}, maintenanceStateUnotron: {}, maintenanceStateUnotronAuto: {}, maintenanceStateLaser: {}, maintenanceStateKW: {} };
+    let state = {};
 
     const kwGroups = {
         wasch: ['silberhorn', 'ministar'],
@@ -75,16 +73,22 @@
         lager: ['unotronAblieferregal', 'entkopplungsregal', 'waschregal', 'oellager']
     };
 
-    // --- DATEN-LISTENER ---
-    Object.keys(state).forEach(key => db.ref(key).on('value', s => { state[key] = s.val() || {}; updateUI(); }));
-    auth.onAuthStateChanged(user => { updateUI(); });
+    // --- EXPLIZITE DATEN-LISTENER (KORRIGIERT) ---
+    db.ref('config').on('value', s => { state.config = s.val() || {}; updateUI(); });
+    db.ref('assignments').on('value', s => { state.assignments = s.val() || {}; updateUI(); });
+    db.ref('maintenanceConfig').on('value', s => { state.maintConfig = s.val() || {}; updateUI(); });
+    db.ref('maintenanceState').on('value', s => { state.maintenanceState = s.val() || {}; updateUI(); });
+    db.ref('maintenanceStateHE').on('value', s => { state.maintenanceStateHE = s.val() || {}; updateUI(); });
+    db.ref('maintenanceStateUnotron').on('value', s => { state.maintenanceStateUnotron = s.val() || {}; updateUI(); });
+    db.ref('maintenanceStateUnotronAuto').on('value', s => { state.maintenanceStateUnotronAuto = s.val() || {}; updateUI(); });
+    db.ref('maintenanceStateLaser').on('value', s => { state.maintenanceStateLaser = s.val() || {}; updateUI(); });
+    db.ref('maintenanceStateKW').on('value', s => { state.maintenanceStateKW = s.val() || {}; updateUI(); });
 
     // --- HILFSFUNKTIONEN ---
     function getDuration(p, t) { if(!p||p.includes("RESET")||!t)return 0; return p.split(/[\s\/]+/).reduce((a,c)=>{let k=c.toUpperCase().trim(); if(k&&!k.startsWith("P"))k="P"+k; return a+(t[k]||0);},0); }
     function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
     function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
     
-    // --- RENDER-FUNKTIONEN ---
     function renderCol(listId, countId, raw, prefix, cfg) {
         let totalMin = 0;
         if(!raw || !raw.cloudRawData || !cfg) {
@@ -105,10 +109,71 @@
             if (rest > (cfg.warn || 5000)) return null;
             const dur = getDuration(isOver ? "RESET" : step.pkg, cfg.times);
             totalMin += dur;
-            return { id: prefix + sId, sId, rest, pkg: isOver ? "WP RESET" : step.pkg, dur, crit: cfg.crit, isReset: isOver, rawTotal: stand };
+            return { id: prefix + sId, sId, rest, pkg: isOver ? "WP RESET" : step.pkg, dur, crit: cfg.crit || 0, isReset: isOver, rawTotal: stand };
         }).filter(m => m).sort((a,b) => a.rest - b.rest);
 
         let cardsHtml = data.length > 0 ? data.map(m => {
-            const ass = state.assignments[m.id] || "";
+            const ass = state.assignments ? state.assignments[m.id] : "";
             let cls = 'warning'; if (m.rest <= 0) cls = 'overdue'; else if (m.rest <= m.crit) cls = 'critical';
-            return `<div class="card ${cls} ${ass ? 'in-progress' : ''}"><div class="card-info"><div><div class="m-id">${m.id}</div><div class="m-paket">${m.pkg}</div>
+            return `<div class="card ${cls}"><div class="card-info"><div><div class="m-id">${m.id}</div><div class="m-paket">${m.pkg}</div><div style="font-size:0.9em;color:#555">⏱ ${m.dur} Min.</div></div><div class="m-rest">${m.rest.toLocaleString()}</div></div></div>`;
+        }).join('') : '<div class="no-data">Keine anstehenden Wartungen</div>';
+        
+        const badge = totalMin > 0 ? `<span class="time-badge">⏳ ${formatTime(totalMin)}</span>` : "";
+        document.getElementById(countId).innerHTML = `<span>${data.length}</span> ${badge}`;
+        document.getElementById(listId).innerHTML = cardsHtml;
+        return totalMin;
+    }
+
+    function renderColKw(listId, countId, groupKeys) {
+        let allMachines = []; let totalMin = 0; const currentWeek = getWeek();
+        groupKeys.forEach(key => {
+            const cfg = state.maintConfig[key]; const machineState = state.maintenanceStateKW[key]; if (!cfg || !machineState) return;
+            (cfg.machines || []).forEach(id => {
+                const cyc = (machineState.extraCycles && machineState.extraCycles[id]) || 0;
+                const step = (cfg.steps && cfg.steps.length > cyc) ? cfg.steps[cyc] : { target: cfg.yearlyResetWeek || 52, pkg: "JAHRES-RESET" };
+                const rest = step.target - currentWeek;
+                if (rest <= (cfg.warnWeeks || 4)) {
+                    const dur = getDuration(step.pkg, cfg.times); totalMin += dur;
+                    allMachines.push({ id: (cfg.prefix || key.substring(0,1).toUpperCase()+'-') + id, sId: id, rest, pkg: step.pkg, dur, crit: 0, machineKey: key });
+                }
+            });
+        });
+        allMachines.sort((a,b) => a.rest - b.rest);
+        
+        let cardsHtml = allMachines.length > 0 ? allMachines.map(m => {
+            const ass = state.assignments ? state.assignments[m.id] : "";
+            let cls = 'warning'; if (m.rest <= 0) cls = 'overdue';
+            return `<div class="card ${cls}"><div class="card-info"><div><div class="m-id">${m.id}</div><div class="m-paket">${m.pkg}</div><div style="font-size:0.9em;color:#555">⏱ ${m.dur} Min.</div></div><div class="m-rest">${m.rest.toLocaleString()} Wo</div></div></div>`;
+        }).join('') : '<div class="no-data">Keine anstehenden Wartungen</div>';
+
+        const badge = totalMin > 0 ? `<span class="time-badge">⏳ ${formatTime(totalMin)}</span>` : "";
+        document.getElementById(countId).innerHTML = `<span>${allMachines.length}</span> ${badge}`;
+        document.getElementById(listId).innerHTML = cardsHtml;
+        return totalMin;
+    }
+
+    function updateUI() {
+        if (!state.maintConfig || !state.maintenanceState) { return; }
+        
+        let globalTotalMin = 0;
+        globalTotalMin += renderCol('list-agie', 'count-agie', state.maintenanceState, 'A-', state.maintConfig.agie);
+        globalTotalMin += renderCol('list-uno', 'count-uno', state.maintenanceStateUnotron, 'U-', state.maintConfig.unotron);
+        globalTotalMin += renderCol('list-he', 'count-he', state.maintenanceStateHE, 'H-', state.maintConfig.he);
+        globalTotalMin += renderCol('list-laser', 'count-laser', state.maintenanceStateLaser, 'L-', state.maintConfig.laser);
+        
+        if (state.maintenanceStateUnotron && state.maintenanceStateUnotron.cloudRawData && state.maintConfig.unotronAuto) {
+            const unoGroups = { "100": [101,102,103,104,113,114,115,116], "200": [117,112,111,110,109,108,107,106], "300": [118,119,120,121,122,123,124,125] };
+            const autoRawList = Object.keys(unoGroups).map(groupId => ({ StationNo: groupId, Parts: unoGroups[groupId].reduce((acc, sId) => acc + ((state.maintenanceStateUnotron.cloudRawData.find(r => r.STATIONNO == sId) || {})["COUNT(*)"] || 0), 0) }));
+            globalTotalMin += renderCol('list-uno-auto', 'count-uno-auto', { ...state.maintenanceStateUnotronAuto, cloudRawData: autoRawList }, 'UA-', state.maintConfig.unotronAuto);
+        }
+
+        globalTotalMin += renderColKw('list-wasch', 'count-wasch', kwGroups.wasch);
+        globalTotalMin += renderColKw('list-pruef', 'count-pruef', kwGroups.pruef);
+        globalTotalMin += renderColKw('list-lager', 'count-lager', kwGroups.lager);
+        
+        document.getElementById('overall-workload').innerText = `Gesamtaufwand: ${formatTime(globalTotalMin)}`;
+    }
+</script>
+
+</body>
+</html>
