@@ -2,11 +2,12 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Zentrales Wartungs Dashboard W430</title>
+    <title>Zentrales Wartungs Dashboard W430 - DEBUG</title>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <style>
+        /* CSS-Stile bleiben unverändert */
         :root { --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; --bosch-gray: #eff1f2; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
         .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
@@ -24,54 +25,36 @@
         .card.warning { background-color: #fff3cd; border-left: 8px solid #ffc107; }
         .card.critical { background-color: #f8d7da; border-left: 8px solid #dc3545; }
         .card.overdue { background-color: #f5b7b1; border-left: 8px solid #b03a2e; }
-        .card.in-progress { background-color: #d1ecf1 !important; border-left: 8px dashed #0c5460 !important; }
-        .card-info { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-        .m-id { font-weight: bold; font-size: 1.2em; } .m-rest { font-weight: bold; font-size: 1.2em; } .m-paket { font-size: 0.9em; font-weight: bold; }
-        .card-actions { display: flex; gap: 5px; margin-top: 8px; }
-        select { flex: 1; padding: 6px; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; background: white; }
-        .btn-done { flex: 0 0 auto; padding: 0 10px; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; font-weight: bold; cursor: pointer; background: white; color: var(--bosch-green); }
-        .btn-done.reset-mode { color: var(--bosch-red); border-color: var(--bosch-red); }
-        .btn-done:disabled { opacity: 0.4; cursor: not-allowed; }
         .nav-btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); border-radius: 4px; }
-        /* Modal-Styles, unverändert */
     </style>
 </head>
 <body>
-
-<div class="top-bar">Zentrales Wartungs Dashboard W430</div>
-<div class="header">
-    <div style="display:flex; align-items:center;">
-        <span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> 
-        <div id="overall-workload" class="total-workload">Lade...</div>
+    <div class="top-bar">Zentrales Wartungs Dashboard W430 - DEBUG-MODUS</div>
+    <div class="header">
+        <div style="display:flex; align-items:center;">
+            <span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> 
+            <div id="overall-workload" class="total-workload">Lade...</div>
+        </div>
+        <div><button class="nav-btn" onclick="auth.signOut()">Logout</button></div>
     </div>
-    <div style="display:flex; gap:10px;">
-        <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
-        <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
+    <div class="dashboard-grid">
+        <div class="column"><div class="col-header"><a href="agie.html" target="_blank">⚡ Agie</a><div id="count-agie"></div></div><div class="machine-list" id="list-agie"></div></div>
+        <div class="column"><div class="col-header"><a href="unotron.html" target="_blank">🧪 Unotron</a><div id="count-uno"></div></div><div class="machine-list" id="list-uno"></div></div>
+        <div class="column"><div class="col-header"><a href="he.html" target="_blank">⚙️ HE</a><div id="count-he"></div></div><div class="machine-list" id="list-he"></div></div>
+        <div class="column"><div class="col-header"><a href="laser.html" target="_blank">💡 Laser</a><div id="count-laser"></div></div><div class="machine-list" id="list-laser"></div></div>
+        <div class="column"><div class="col-header"><a href="waschanlagen.html" target="_blank">💧 Waschanlagen</a><div id="count-wasch"></div></div><div class="machine-list" id="list-wasch"></div></div>
+        <div class="column"><div class="col-header"><a href="pruefgeraete.html" target="_blank">🔍 Prüfgeräte</a><div id="count-pruef"></div></div><div class="machine-list" id="list-pruef"></div></div>
+        <div class="column"><div class="col-header"><a href="lager.html" target="_blank">📦 Lager & Regale</a><div id="count-lager"></div></div><div class="machine-list" id="list-lager"></div></div>
     </div>
-</div>
-
-<div class="dashboard-grid">
-    <!-- Spalten für alle 8 Gruppen -->
-    <div class="column"><div class="col-header"><a href="agie.html" target="_blank">⚡ Agie <span>➔</span></a><div id="count-agie">0</div></div><div class="machine-list" id="list-agie"></div></div>
-    <div class="column"><div class="col-header"><a href="unotron.html" target="_blank">🧪 Unotron <span>➔</span></a><div id="count-uno">0</div></div><div class="machine-list" id="list-uno"></div></div>
-    <div class="column"><div class="col-header"><a href="he.html" target="_blank">⚙️ HE <span>➔</span></a><div id="count-he">0</div></div><div class="machine-list" id="list-he"></div></div>
-    <div class="column"><div class="col-header"><a href="unotron-auto.html" target="_blank">🤖 Unotron Auto <span>➔</span></a><div id="count-uno-auto">0</div></div><div class="machine-list" id="list-uno-auto"></div></div>
-    <div class="column"><div class="col-header"><a href="laser.html" target="_blank">💡 Laser <span>➔</span></a><div id="count-laser">0</div></div><div class="machine-list" id="list-laser"></div></div>
-    <div class="column" style="border-top-color: #17a2b8;"><div class="col-header"><a href="waschanlagen.html" target="_blank">💧 Waschanlagen <span>➔</span></a><div id="count-wasch">0</div></div><div class="machine-list" id="list-wasch"></div></div>
-    <div class="column" style="border-top-color: #fd7e14;"><div class="col-header"><a href="pruefgeraete.html" target="_blank">🔍 Prüfgeräte <span>➔</span></a><div id="count-pruef">0</div></div><div class="machine-list" id="list-pruef"></div></div>
-    <div class="column" style="border-top-color: #6f42c1;"><div class="col-header"><a href="lager.html" target="_blank">📦 Lager & Regale <span>➔</span></a><div id="count-lager">0</div></div><div class="machine-list" id="list-lager"></div></div>
-</div>
-
-<!-- Hier die Modal-Container für Auth und Admin einfügen (Code ist lang und unverändert) -->
-<div id="authModal" class="modal">...</div>
-<div id="adminModal" class="modal">...</div>
 
 <script>
+    console.log("--- SCRIPT START ---");
+
     const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database(), auth = firebase.auth();
     
-    let state = { config: {}, assignments: {}, maintConfig: {}, agie: {}, uno: {}, he: {}, unoAuto: {}, laser: {}, kw_states: {} };
+    let state = {};
 
     const kwGroups = {
         wasch: ['silberhorn', 'ministar'],
@@ -79,55 +62,105 @@
         lager: ['unotronAblieferregal', 'entkopplungsregal', 'waschregal', 'oellager']
     };
 
-    // --- ALLE DATEN-LISTENER ---
-    Object.keys(state).forEach(key => db.ref(key === 'agie' ? 'maintenanceState' : (key.startsWith('kw') ? 'maintenanceStateKW' : key)).on('value', s => { state[key] = s.val() || {}; updateUI(); }));
-    auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; updateUI(); });
+    console.log("Firebase initialisiert. Setze Listener...");
 
+    const paths = {
+        maintConfig: 'maintenanceConfig',
+        maintenanceState: 'maintenanceState',
+        maintenanceStateHE: 'maintenanceStateHE',
+        maintenanceStateUnotron: 'maintenanceStateUnotron',
+        maintenanceStateLaser: 'maintenanceStateLaser',
+        maintenanceStateKW: 'maintenanceStateKW'
+    };
 
-    // --- HILFSFUNKTIONEN (inkl. Admin/Auth/Logik) ---
-    function getDuration(p, t) { if(!p||p.includes("RESET")||!t)return 0; return p.split(/[\s\/]+/).reduce((a,c)=>{let k=c.toUpperCase().trim(); if(k&&!k.startsWith("P"))k="P"+k; return a+(t[k]||0);},0); }
-    function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
-    function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
-    // Hier kommen alle anderen Funktionen rein: toggleAuthModal, openAdminModal, handleEinstellerChange, confirmMaint, etc.
-    // ...
+    Object.keys(paths).forEach(key => {
+        db.ref(paths[key]).on('value', s => {
+            console.log(`Daten für '${key}' empfangen:`, s.val());
+            state[key] = s.val() || {};
+            updateUI();
+        }, err => console.error(`Fehler beim Laden von '${key}':`, err));
+    });
 
-    // --- RENDER-FUNKTIONEN (MIT WIEDERHERGESTELLTEN BUTTONS) ---
-    function renderCol(listId, countId, raw, prefix, cfg) {
-        let totalMin = 0;
-        if(!raw || !raw.cloudRawData || !cfg) {
-            document.getElementById(listId).innerHTML = '<div class="no-data">Lade Daten...</div>'; document.getElementById(countId).innerHTML = '0'; return 0;
+    function getWeek() { const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+3-(d.getDay()+6)%7);const w1=new Date(d.getFullYear(),0,4);return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7);}
+    function formatTime(m) { return m > 0 ? `${m} Min` : '0 Min'; }
+
+    function renderCol(listId, rawData, cfg, prefix) {
+        console.log(`Render Col für ${listId} mit Prefix ${prefix}`);
+        if (!rawData || !rawData.cloudRawData || !cfg) {
+            console.warn(`Fehlende Daten für ${listId}:`, {rawData, cfg});
+            document.getElementById(listId).innerHTML = '<div class="no-data">Konfig. oder Live-Daten fehlen</div>';
+            return [];
         }
         
-        const data = raw.cloudRawData.map(item => {
-            const sId = item.StationNo || item.STATIONNO; if(!sId) return null;
+        const filteredData = rawData.cloudRawData.map(item => {
+            const sId = item.StationNo || item.STATIONNO;
             const stand = parseInt(item.Parts || item["COUNT(*)"]) || 0;
-            const offK = prefix==='A-'?'agieOffsets':(prefix==='H-'?'heOffsets':(prefix==='L-'?'laserOffsets':'unotronOffsets'));
-            const offset = (raw[offK] && raw[offK][sId]) || 0;
-            const cyc = (raw.extraCycles && raw.extraCycles[sId]) || 0;
-            const ist = stand - offset;
-            const step = (cfg.steps && cfg.steps[cyc]) || { target: cfg.maxLimit, pkg: "RESET" };
-            const isOver = ist >= cfg.maxLimit;
-            const target = isOver ? cfg.maxLimit : step.target;
-            const rest = target - ist;
-            if (rest > cfg.warn) return null;
-            const dur = getDuration(isOver ? "RESET" : step.pkg, cfg.times);
-            totalMin += dur;
-            return { id: prefix + sId, sId, rest, pkg: isOver ? "WP RESET" : step.pkg, dur, crit: cfg.crit, isReset: isOver, rawTotal: stand };
-        }).filter(m => m).sort((a,b) => a.rest - b.rest);
+            if (!sId) return null;
 
-        let cardsHtml = data.length > 0 ? data.map(m => {
-            const ass = state.assignments[m.id] || "";
-            let cls = 'warning'; if (m.rest <= 0) cls = 'overdue'; else if (m.rest <= m.crit) cls = 'critical';
-            return `<div class="card ${cls} ${ass ? 'in-progress' : ''}"><div class="card-info"><div><div class="m-id">${m.id}</div><div class="m-paket">${m.pkg}</div><div style="font-size:0.9em;color:#555">⏱ ${m.dur} Min.</div></div><div class="m-rest">${m.rest.toLocaleString()}</div></div><div class="card-actions"><select onchange="handleEinstellerChange('${prefix}', '${m.sId}', this.value)"><option value="">-- Einsteller --</option>${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass === e ? 'selected' : ''}>${e}</option>`).join('')}</select><button class="${m.isReset ? 'btn-done reset-mode' : 'btn-done'}" ${!ass ? 'disabled' : ''} onclick="confirmMaint('${prefix}','${m.sId}',${m.isReset},${m.rawTotal})">${m.isReset ? '🔄 Reset' : '✅ OK'}</button></div></div>`;
-        }).join('') : '<div class="no-data">Keine anstehenden Wartungen</div>';
+            const ist = stand - ((rawData.agieOffsets && rawData.agieOffsets[sId]) || 0);
+            const step = (cfg.steps && cfg.steps[0]) || {target: cfg.maxLimit, pkg: "RESET"};
+            const rest = step.target - ist;
+            
+            if (rest <= (cfg.warn || 5000)) {
+                return { id: prefix + sId, rest, pkg: step.pkg };
+            }
+            return null;
+        }).filter(m => m);
+
+        console.log(`Gefilterte Daten für ${listId}:`, filteredData);
+        document.getElementById(listId).innerHTML = filteredData.length > 0 ? filteredData.map(m => `<div class="card">${m.id} - Rest: ${m.rest}</div>`).join('') : '<div class="no-data">Keine Wartungen</div>';
+        return filteredData;
+    }
+    
+    function renderKwGroup(listId, keys) {
+        console.log(`Render KW Group für ${listId} mit Keys:`, keys);
+        const currentWeek = getWeek();
+        let allMachines = [];
+
+        keys.forEach(key => {
+            const cfg = state.maintConfig[key];
+            const machineState = state.maintenanceStateKW[key];
+            if (!cfg || !machineState) {
+                console.warn(`Fehlende Daten für KW-Maschine '${key}':`, {cfg, machineState});
+                return;
+            }
+
+            (cfg.machines || []).forEach(id => {
+                const cyc = (machineState.extraCycles && machineState.extraCycles[id]) || 0;
+                const step = (cfg.steps && cfg.steps[cyc]) || {target: cfg.yearlyResetWeek || 52, pkg: "JAHRES-RESET"};
+                const rest = step.target - currentWeek;
+
+                if (rest <= (cfg.warnWeeks || 4)) {
+                    allMachines.push({ id: (cfg.prefix || key.substring(0,1).toUpperCase()) + id, rest, pkg: step.pkg });
+                }
+            });
+        });
         
-        const badge = totalMin > 0 ? `<span class="time-badge">⏳ ${formatTime(totalMin)}</span>` : "";
-        document.getElementById(countId).innerHTML = `<span>${data.length}</span> ${badge}`;
-        document.getElementById(listId).innerHTML = cardsHtml;
-        return totalMin;
+        console.log(`Gefilterte KW-Daten für ${listId}:`, allMachines);
+        document.getElementById(listId).innerHTML = allMachines.length > 0 ? allMachines.map(m => `<div class="card">${m.id} - Rest: ${m.rest} Wo</div>`).join('') : '<div class="no-data">Keine Wartungen</div>';
+        return allMachines;
     }
 
-    function renderColKw(listId, countId, groupKeys) {
-        let allMachines = []; let totalMin = 0; const currentWeek = getWeek();
-        groupKeys.forEach(key => {
-            const cfg = state.m
+
+    function updateUI() {
+        console.log("--- updateUI() wird aufgerufen ---");
+        if (!state.maintConfig || !state.maintenanceState || !state.maintenanceStateUnotron) {
+            console.log("Warte auf kritische Initialdaten (Config, Agie-State, Unotron-State)...");
+            return;
+        }
+        
+        console.log("Alle kritischen Daten vorhanden, starte Rendering...");
+        
+        renderCol('list-agie', state.maintenanceState, state.maintConfig.agie, 'A-');
+        renderCol('list-uno', state.maintenanceStateUnotron, state.maintConfig.unotron, 'U-');
+        renderCol('list-he', state.maintenanceStateHE, state.maintConfig.he, 'H-');
+        renderCol('list-laser', state.maintenanceStateLaser, state.maintConfig.laser, 'L-');
+        
+        renderKwGroup('list-wasch', kwGroups.wasch);
+        renderKwGroup('list-pruef', kwGroups.pruef);
+        renderKwGroup('list-lager', kwGroups.lager);
+    }
+</script>
+
+</body>
+</html>
