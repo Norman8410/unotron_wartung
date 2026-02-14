@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <!-- TODO 1: Titel anpassen -->
+    <title>Sichtprüfstände Wartung - Detailansicht</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <style>
+        :root { 
+            --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; 
+            --bosch-gray: #eff1f2; --bosch-dark-red: #8b0000;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
+        .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .main-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
+        .chart-area { flex: 3; background: white; padding: 20px; border-top: 4px solid var(--bosch-blue); border-radius: 4px; position: relative; }
+        .sidebar { flex: 1.5; background: white; border-top: 4px solid var(--bosch-blue); overflow-y: auto; padding: 10px; border-radius: 4px; }
+        .row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; gap: 10px; border-left: 8px solid #ccc; margin-bottom: 5px; transition: 0.2s; }
+        .row:hover { background: #f9f9f9; }
+        .btn-cycle { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; border-radius: 2px; transition: 0.2s; }
+        .btn-cycle:hover:not(:disabled) { background: var(--bosch-blue); color: white; }
+        .btn-cycle:disabled { opacity: 0.3; cursor: not-allowed; background: #eee; color: #999; border-color: #ddd; }
+        .btn-reset-auto { background: var(--bosch-red); color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; width: 100%; border-radius: 2px; }
+        @keyframes blink-red { 0% { background: #fff; } 50% { background: #ffcccc; } 100% { background: #fff; } }
+        .blink { animation: blink-red 1s infinite; }
+    </style>
+</head>
+<body onmousemove="resetTimer()">
+
+<!-- TODO 2: Überschrift anpassen -->
+<div class="top-bar">Sichtprüfstände Silberhorn - Wartungsübersicht</div>
+<div class="header">
+    <div><span style="font-size: 24px; color: var(--bosch-red); font-weight: 900;">BOSCH</span></div>
+    <button style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue);" onclick="window.close()">❌ Schließen</button>
+</div>
+
+<div class="main-layout">
+    <div class="chart-area"><canvas id="mainChart"></canvas></div>
+    <div class="sidebar" id="machineList">Lade Daten...</div>
+</div>
+
+<script>
+    const firebaseConfig = { 
+        apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", 
+        authDomain: "bosch-agie-wartung.firebaseapp.com", 
+        databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", 
+        projectId: "bosch-agie-wartung" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(), auth = firebase.auth();
+    
+    let chart = null, currentUser = null, inactivityTimer, config = null;
+
+    // TODO 3: Firebase-Pfade und Maschinen-Präfix anpassen
+    const MACHINE_KEY = "sichtpruefstaende"; // Eindeutiger Schlüssel für diese Maschine/Gruppe
+    const MACHINE_PREFIX = "SPS-";       // Kürzel für die Anzeige (z.B. S-1, S-2)
+    const CONFIG_PATH = `maintenanceConfig/${MACHINE_KEY}`;
+    const STATE_PATH = `maintenanceState/${MACHINE_KEY}`;
+    const PAGE_FILENAME = "waschanlagen.html"; // Für das Logging
+
+    function resetTimer() {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => { window.close(); }, 70000);
+    }
+
+    async function writeLog(action, machineId, details) {
+        if (!auth.currentUser) return;
+        await db.ref('logs').push({
+            zeit: new Date().toLocaleString('de-DE'),
+            user: auth.currentUser.email,
+            seite: PAGE_FILENAME,
+            aktion: action,
+            maschine: `${MACHINE_PREFIX}${machineId}`,
+            info: details
+        });
+    }
+
+    // Funktion zur Berechnung der Dauer aus den Wartungspaketen
+    function getDuration(pkgString, timeTable) {
+        if (!pkgString || pkgString.includes("RESET") || !timeTable) return 0;
+        return pkgString.split(/[\s\/,]+/).reduce((acc, p) => {
+            let key = p.toUpperCase().trim(); 
+            if(key && !key.startsWith("P")) key = "P" + key;
+            return acc + (timeTable[key] || 0);
+        }, 0);
+    }
+    
+    // NEU: Funktion zur Ermittlung der aktuellen Kalenderwoche
+    function getCalendarWeek() {
+        const date = new Date();
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+
+    auth.onAuthStateChanged(user => { 
+        currentUser = user;
+        loadData();
+    });
+
+    function loadData() {
+        db.ref(CONFIG_PATH).on('value', cfgSnap => {
+            config = cfgSnap.val();
+            if (!config) {
+                document.getElementById('machineList').innerHTML = `Fehler: Keine Konfiguration unter ${CONFIG_PATH} gefunden.`;
+                return;
+            }
+
+            db.ref(STATE_PATH).on('value', snap => {
+                const state = snap.val() || {};
+                const cycles = state.extraCycles || {}; // Zyklen für jede einzelne Maschine
+                const machineIds = config.machines || ["1"]; // Annahme: Es gibt Maschinen "1" und "2" laut CSV
+                const currentWeek = getCalendarWeek();
+
+                const data = machineIds.map(id => {
+                    const cyc = cycles[id] || 0;
+                    
+                    const step = config.steps[cyc] || { target: config.yearlyResetWeek || 52, pkg: "JAHRES-RESET" };
+                    const needsReset = cyc >= config.steps.length;
+
+                    const targetWeek = needsReset ? (config.yearlyResetWeek || 52) : step.target;
+                    const rest = targetWeek - currentWeek;
+                    
+                    const pkgName = needsReset ? "JAHRES-RESET" : step.pkg;
+                    const duration = getDuration(pkgName, config.times);
+
+                    const color = (rest <= 0) ? "#8b0000" : (rest <= (config.warnWeeks || 2) ? "#d50000" : "#008a4f");
+
+                    return { id, rest, cyc, pkg: pkgName, duration, needsReset, color, targetWeek };
+                }).sort((a,b) => a.rest - b.rest);
+
+                renderList(data);
+                renderChart(data);
+            });
+        });
+    }
+
+    function renderList(data) {
+        const warnWeeks = config.warnWeeks || 2;
+        document.getElementById('machineList').innerHTML = data.map(d => `
+            <div class="row ${d.rest <= 0 ? 'blink' : ''}" style="border-left-color:${d.color}">
+                <div style="flex:2">
+                    <b>${MACHINE_PREFIX}${d.id}</b> <span style="font-size:0.8em; color:#666;">(Schritt: ${d.cyc + 1})</span><br>
+                    <small style="color:var(--bosch-red); font-weight:bold">${d.pkg} ${d.duration > 0 ? '(' + d.duration + ' Min.)' : ''}</small>
+                </div>
+                <div style="flex:1; text-align:right;">Rest: <b>${d.rest} Wochen</b></div>
+                <div style="display:${currentUser ? 'flex' : 'none'}; gap:5px;">
+                    ${d.needsReset ? 
+                        `<button class="btn-reset-auto" onclick="resetCycle('${d.id}')">RESET</button>` :
+                        `<button class="btn-cycle" onclick="advanceCycle('${d.id}')" ${d.rest > warnWeeks ? 'disabled' : ''}>OK</button>`
+                    }
+                </div>
+            </div>`).join('');
+    }
+
+    async function advanceCycle(id) {
+        if(!confirm(`Wartung für ${MACHINE_PREFIX}${id} als erledigt markieren?`)) return;
+        const ref = db.ref(`${STATE_PATH}/extraCycles/${id}`);
+        const snap = await ref.once('value');
+        const next = (snap.val() || 0) + 1;
+        await ref.set(next);
+        await writeLog("WARTUNG_OK", id, `Schritt auf ${next + 1} gesetzt.`);
+    }
+
+    async function resetCycle(id) {
+        if(!confirm(`Jahres-Reset für ${MACHINE_PREFIX}${id} bestätigen?`)) return;
+        await db.ref(`${STATE_PATH}/extraCycles/${id}`).set(0);
+        await writeLog("RESET", id, `Zyklus auf 0 zurückgesetzt.`);
+    }
+
+    function renderChart(data) {
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        if(chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => `${MACHINE_PREFIX}` + d.id),
+                datasets: [{ 
+                    label: 'Rest (Wochen)',
+                    data: data.map(d => d.rest), 
+                    backgroundColor: data.map(d => d.color) 
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const d = data[ctx.dataIndex];
+                                let lines = [];
+                                if (d.rest <= 0) lines.push(`⚠️ Fällig seit: ${Math.abs(d.rest)} Wochen`);
+                                else lines.push(`Rest bis Wartung: ${d.rest} Wochen`);
+                                
+                                lines.push(`Zieldatum: KW ${d.targetWeek}`);
+                                lines.push(`Paket offen: ${d.pkg}`);
+                                if(d.duration > 0) lines.push(`Dauer: ca. ${d.duration} Min.`);
+                                return lines;
+                            }
+                        }
+                    },
+                    datalabels: { 
+                        anchor: 'end', align: 'top', font: { weight: 'bold' },
+                        formatter: (val) => val + " W" 
+                    }
+                },
+                scales: { y: { title: { display: true, text: 'Rest in Wochen' } } }
+            },
+            plugins: [ChartDataLabels]
+        });
+    }
+</script>
+</body>
+</html>
